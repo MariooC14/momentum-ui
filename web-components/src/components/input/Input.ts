@@ -139,6 +139,36 @@ export namespace Input {
     }
   }
 
+  export interface InputChangeEventDetail {
+    srcEvent: Event;
+    value: string;
+  }
+
+  export interface InputFocusEventDetail {
+    srcEvent: FocusEvent;
+  }
+
+  export interface InputBlurEventDetail {
+    srcEvent: FocusEvent;
+  }
+
+  export interface InputKeydownEventDetail {
+    srcEvent: KeyboardEvent;
+  }
+
+  export interface InputMousedownEventDetail {
+    srcEvent: MouseEvent;
+  }
+
+  export interface InputClearEventDetail {
+    srcEvent: MouseEvent | KeyboardEvent;
+  }
+
+  export interface InputDropdownClickEventDetail {
+    srcEvent: MouseEvent;
+    expanded: boolean;
+  }
+
   @customElementWithCheck("md-input")
   export class ELEMENT extends FocusMixin(LitElement) {
     @property({ type: String }) ariaDescribedBy = "";
@@ -181,6 +211,11 @@ export namespace Input {
     @property({ type: String }) ariaExpanded = "";
     @property({ type: Boolean }) newMomentum = false;
     @property({ type: Object }) control?: FormControl<unknown>;
+    @property({ type: Boolean }) disableUserTextInput = false;
+
+    @property({ type: Boolean }) showDropdown = false;
+    @property({ type: Boolean }) dropdownExpanded = false;
+    @property({ type: String }) dropdownAriaLabel = "Show options";
 
     @query(".md-input") input!: HTMLInputElement;
 
@@ -206,6 +241,10 @@ export namespace Input {
 
     public select() {
       this.input.select();
+    }
+
+    public focus() {
+      this.input.focus();
     }
 
     handleOutsideClick(event: MouseEvent) {
@@ -334,6 +373,23 @@ export namespace Input {
       this.hasRightSlotContent = this.inputSectionRightSlot?.assignedNodes().length > 0;
     }
 
+    handleDropdownClick(event: MouseEvent) {
+      event.preventDefault();
+
+      this.dropdownExpanded = !this.dropdownExpanded;
+
+      this.dispatchEvent(
+        new CustomEvent("input-dropdown-click", {
+          bubbles: true,
+          composed: true,
+          detail: {
+            srcEvent: event,
+            expanded: this.dropdownExpanded
+          }
+        })
+      );
+    }
+
     get messageType(): Input.MessageType | null {
       if (this.messageArr.length > 0) {
         return this.messageController.determineMessageType(this.messageArr);
@@ -380,6 +436,7 @@ export namespace Input {
         "md-active": this.isEditing,
         "md-focus": this.isEditing,
         "md-read-only": this.readOnly,
+        "md-disable-user-text-input": this.disableUserTextInput,
         "md-disabled": this.disabled,
         "md-dirty": !!this.value,
         "md-has-right-icon": this.hasRightIcon
@@ -387,11 +444,15 @@ export namespace Input {
     }
 
     get ariaExpandedValue() {
-      return this.ariaExpanded === "true" || this.ariaExpanded === "false" ? this.ariaExpanded : "undefined";
+      return this.ariaExpanded === "true" || this.ariaExpanded === "false" ? this.ariaExpanded : undefined;
     }
 
     get hasRightIcon() {
       if (this.clear && !this.disabled && this.value && !this.readOnly) {
+        return true;
+      }
+
+      if (this.showDropdown) {
         return true;
       }
 
@@ -452,10 +513,11 @@ export namespace Input {
               id=${this.htmlId}
               role=${this.role}
               placeholder=${this.placeholder}
-              ?readonly=${this.readOnly || this.disabled}
+              ?readonly=${this.readOnly || this.disabled || this.disableUserTextInput}
               min=${ifDefined(this.min)}
               max=${ifDefined(this.max)}
               maxlength=${ifDefined(this.maxLength)}
+              aria-haspopup=${ifDefined(this.showDropdown ? "true" : undefined)}
             />
           `;
     }
@@ -507,15 +569,43 @@ export namespace Input {
               >
               </md-icon>
             </md-button>
+            ${this.comboBoxButtonTemplate}
           </div>
         `;
       } else if (!this.compact) {
         return html`
           <div class=${classMap(this.inputRightTemplateClassMap)}>
             <slot name="input-section-right" @slotchange=${this.handleRighSlotChange}></slot>
+            ${this.comboBoxButtonTemplate}
           </div>
         `;
+      } else if (this.showDropdown) {
+        return html` <div class=${classMap(this.inputRightTemplateClassMap)}>${this.comboBoxButtonTemplate}</div> `;
       }
+    }
+
+    private get comboBoxButtonTemplate() {
+      return this.showDropdown
+        ? html`
+            <button
+              class="md-input__dropdown-button"
+              tabindex="-1"
+              .ariaLabel=${this.dropdownAriaLabel}
+              @click=${(event: MouseEvent) => this.handleDropdownClick(event)}
+              @mousedown=${(event: MouseEvent) => event.preventDefault()}
+              ?disabled=${this.disabled}
+            >
+              <md-icon
+                class="md-input__dropdown-icon ${this.dropdownExpanded ? "expanded" : ""}"
+                name="arrow-down-bold"
+                size="16"
+                iconSet="momentumDesign"
+                .ariaHidden=${"true"}
+              >
+              </md-icon>
+            </button>
+          `
+        : nothing;
     }
 
     secondaryLabelTemplate() {
@@ -526,7 +616,7 @@ export namespace Input {
               secondaryLabel
               .htmlFor=${this.htmlId}
               .label=${this.secondaryLabel}
-              @label-click="${() => this.handleLabelClick()}"
+              @label-click=${() => this.handleLabelClick()}
             ></md-label>
           `
         : nothing;
@@ -570,7 +660,7 @@ export namespace Input {
               class="md-input__label ${classMap({ disabled: this.disabled, newMomentum: this.newMomentum })}"
               .htmlFor=${this.htmlId}
               .label=${this.label}
-              @label-click="${() => this.handleLabelClick()}"
+              @label-click=${() => this.handleLabelClick()}
             ></md-label>
           `
         : nothing;
@@ -597,5 +687,15 @@ export namespace Input {
 declare global {
   interface HTMLElementTagNameMap {
     "md-input": Input.ELEMENT;
+  }
+
+  interface HTMLElementEventMap {
+    "input-change": CustomEvent<Input.InputChangeEventDetail>;
+    "input-focus": CustomEvent<Input.InputFocusEventDetail>;
+    "input-blur": CustomEvent<Input.InputBlurEventDetail>;
+    "input-keydown": CustomEvent<Input.InputKeydownEventDetail>;
+    "input-mousedown": CustomEvent<Input.InputMousedownEventDetail>;
+    "input-clear": CustomEvent<Input.InputClearEventDetail>;
+    "input-dropdown-click": CustomEvent<Input.InputDropdownClickEventDetail>;
   }
 }
